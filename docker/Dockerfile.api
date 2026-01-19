@@ -1,0 +1,32 @@
+# Stage 1: Build
+FROM python:3.11-slim as builder
+
+WORKDIR /app
+
+# Установка Poetry
+ENV POETRY_VERSION=1.7.1
+RUN pip install "poetry==$POETRY_VERSION"
+
+# Копируем файлы зависимостей
+COPY pyproject.toml poetry.lock* ./
+
+# Устанавливаем зависимости без создания venv внутри контейнера
+RUN poetry config virtualenvs.create false \
+    && poetry install --no-interaction --no-ansi --no-root
+
+# Stage 2: Run
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Копируем установленные пакеты из builder
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Копируем код приложения
+COPY . .
+
+# Выставляем PYTHONPATH, чтобы модули app.core и т.д. были видны
+ENV PYTHONPATH=/app
+
+CMD ["uvicorn", "app.api.routes:app", "--host", "0.0.0.0", "--port", "8000"]
