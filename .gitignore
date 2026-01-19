@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+.env
+
+# Infrastructure
+.pytest_cache/
+*.log
+qdrant_data/  # Данные БД не должны быть в гите
+
+# OS
+.DS_Store
