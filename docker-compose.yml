@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  # Основной API (FastAPI)
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    ports:
+      - "8000:8000"
+    env_file: .env
+    depends_on:
+      - redis
+      - qdrant
+    volumes:
+      - .:/app  # Пробрасываем код для hot-reload
+
+  # Фоновый воркер (Celery)
+  worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    # Команда запускает Celery, используя наше приложение
+    command: celery -A app.core.celery_app worker --loglevel=info
+    env_file: .env
+    depends_on:
+      - redis
+      - qdrant
+    volumes:
+      - .:/app
+
+  # Брокер сообщений
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  # Векторная база данных
+  qdrant:
+    image: qdrant/qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+
+volumes:
+  qdrant_storage:
