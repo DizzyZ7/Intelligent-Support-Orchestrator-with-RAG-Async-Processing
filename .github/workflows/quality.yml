@@ -23,7 +23,7 @@ jobs:
       - name: Run dependency-free regression tests
         run: |
           python -m pip install pytest
-          python -m pytest -q tests
+          python -m pytest -q tests --ignore=tests/test_runtime_integrations.py
 
   dependency-and-compose:
     runs-on: ubuntu-latest
@@ -48,6 +48,16 @@ jobs:
           WEBHOOK_SECRET: ci-placeholder-secret
         run: |
           python -c 'from app.api.routes import app; from app.worker.tasks import process_ticket_task; print(app.title, process_ticket_task.name)'
+      - name: Run mocked runtime integration tests
+        env:
+          OPENAI_API_KEY: test-placeholder
+          ZENDESK_API_TOKEN: test-placeholder
+          ZENDESK_SUBDOMAIN: example
+          ZENDESK_EMAIL: test@example.invalid
+          WEBHOOK_SECRET: test-secret
+        run: |
+          python -m pip install pytest
+          python -m pytest -q tests/test_runtime_integrations.py
       - name: Validate Docker Compose
         env:
           OPENAI_API_KEY: ci-placeholder
