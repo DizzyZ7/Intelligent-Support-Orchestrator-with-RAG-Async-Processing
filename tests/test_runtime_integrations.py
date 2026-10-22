@@ -110,7 +110,7 @@ def test_worker_calls_rag_then_private_note(monkeypatch):
     result = tasks.process_ticket_task.run(ticket_id=42, user_query="Question")
     assert result == {"status": "success", "ticket_id": 42}
     rag.assert_called_once_with("Question")
-    note.assert_called_once_with(42, "Internal draft\\n\\n[marker]")
+    note.assert_called_once_with(42, "Internal draft\n\n[marker]")
     lease.complete.assert_called_once()
 
 
