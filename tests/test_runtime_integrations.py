@@ -213,3 +213,31 @@ def test_worker_retries_temporary_http_error(monkeypatch):
         tasks.process_ticket_task.run(42, "Question")
     lease.release.assert_called_once()
     retry.assert_called_once()
+
+
+@pytest.mark.parametrize("header, expected", [("120", 120), ("99999", 3600), ("0", 1), ("invalid", 60), (None, 60)])
+def test_zendesk_retry_after_delay(header, expected):
+    import httpx
+    from app.worker.tasks import retry_delay
+
+    response = httpx.Response(429, headers={"Retry-After": header} if header is not None else {})
+    assert retry_delay(response) == expected
+
+
+def test_worker_honors_retry_after(monkeypatch):
+    import httpx
+    from app.worker import tasks
+
+    lease = Mock()
+    lease.acquire.return_value = "acquired"
+    monkeypatch.setattr(tasks, "TicketLease", Mock(return_value=lease))
+    monkeypatch.setattr(tasks, "note_marker", Mock(return_value="[marker]"))
+    request = httpx.Request("GET", "https://example.zendesk.com/api/v2/tickets/42/comments.json")
+    response = httpx.Response(429, headers={"Retry-After": "180"}, request=request)
+    failure = httpx.HTTPStatusError("Rate limited", request=request, response=response)
+    monkeypatch.setattr(tasks, "note_exists", Mock(side_effect=failure))
+    retry = Mock(side_effect=RuntimeError("retry scheduled"))
+    monkeypatch.setattr(tasks.process_ticket_task, "retry", retry)
+    with pytest.raises(RuntimeError, match="retry scheduled"):
+        tasks.process_ticket_task.run(42, "Question")
+    assert retry.call_args.kwargs["countdown"] == 180
