@@ -28,7 +28,7 @@ def run_ingestion():
         host=settings.QDRANT_HOST,
         port=settings.QDRANT_PORT,
         collection_name="support_kb",
-        force_recreate=True  # Для разработки — перезаписываем базу при каждом запуске
+        force_recreate=False  # Сохраняем существующую коллекцию и документы
     )
     print(f"Successfully indexed {len(docs)} chunks to Qdrant.")
 
