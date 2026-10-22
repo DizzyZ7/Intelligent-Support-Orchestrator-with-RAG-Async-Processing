@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     
     # App Settings
     PROJECT_NAME: str = "Intelligent Support Orchestrator"
-    DEBUG: bool = True
+    DEBUG: bool = False
 
     model_config = SettingsConfigDict(env_file=".env")
 
