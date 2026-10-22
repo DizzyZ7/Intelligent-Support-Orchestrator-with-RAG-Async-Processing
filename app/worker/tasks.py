@@ -18,7 +18,7 @@ def process_ticket_task(self, ticket_id: int, user_query: str):
             return {"status": "already_processed", "ticket_id": ticket_id}
         if state == "busy":
             # Another worker owns the lease. Retry rather than silently lose the job.
-            raise self.retry(countdown=30)
+            return {"status": "in_progress", "ticket_id": ticket_id}
         try:
             answer = generate_rag_answer(user_query)
             post_comment_to_ticket(ticket_id, answer)
