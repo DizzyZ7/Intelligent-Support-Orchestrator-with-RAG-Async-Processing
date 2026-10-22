@@ -4,7 +4,7 @@ import logging
 from app.core.celery_app import celery_app
 from app.services.idempotency import TicketLease
 from app.services.llm_service import generate_rag_answer
-from app.services.zendesk import post_comment_to_ticket
+from app.services.zendesk import note_exists, note_marker, post_comment_to_ticket
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +20,12 @@ def process_ticket_task(self, ticket_id: int, user_query: str):
             # Another worker owns the lease. Retry rather than silently lose the job.
             return {"status": "in_progress", "ticket_id": ticket_id}
         try:
+            marker = note_marker(ticket_id, user_query)
+            if note_exists(ticket_id, marker):
+                lease.complete()
+                return {"status": "already_processed", "ticket_id": ticket_id}
             answer = generate_rag_answer(user_query)
-            post_comment_to_ticket(ticket_id, answer)
+            post_comment_to_ticket(ticket_id, f"{answer}\\n\\n{marker}")
             lease.complete()
             return {"status": "success", "ticket_id": ticket_id}
         except Exception:

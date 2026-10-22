@@ -101,6 +101,8 @@ def test_worker_calls_rag_then_private_note(monkeypatch):
     lease = Mock() 
     lease.acquire.return_value = "acquired"
     monkeypatch.setattr(tasks, "TicketLease", Mock(return_value=lease))
+    monkeypatch.setattr(tasks, "note_exists", Mock(return_value=False))
+    monkeypatch.setattr(tasks, "note_marker", Mock(return_value="[marker]"))
     rag = Mock(return_value="Internal draft")
     note = Mock()
     monkeypatch.setattr(tasks, "generate_rag_answer", rag)
@@ -108,7 +110,7 @@ def test_worker_calls_rag_then_private_note(monkeypatch):
     result = tasks.process_ticket_task.run(ticket_id=42, user_query="Question")
     assert result == {"status": "success", "ticket_id": 42}
     rag.assert_called_once_with("Question")
-    note.assert_called_once_with(42, "Internal draft")
+    note.assert_called_once_with(42, "Internal draft\\n\\n[marker]")
     lease.complete.assert_called_once()
 
 
@@ -138,3 +140,36 @@ def test_worker_skips_concurrent_ticket(monkeypatch):
     assert tasks.process_ticket_task.run(42, "Question")["status"] == "in_progress"
     note.assert_not_called()
 
+
+
+def test_worker_reconciles_existing_zendesk_note(monkeypatch):
+    from app.worker import tasks
+
+    lease = Mock()
+    lease.acquire.return_value = "acquired"
+    monkeypatch.setattr(tasks, "TicketLease", Mock(return_value=lease))
+    monkeypatch.setattr(tasks, "note_marker", Mock(return_value="[marker]"))
+    monkeypatch.setattr(tasks, "note_exists", Mock(return_value=True))
+    rag = Mock()
+    note = Mock()
+    monkeypatch.setattr(tasks, "generate_rag_answer", rag)
+    monkeypatch.setattr(tasks, "post_comment_to_ticket", note)
+    assert tasks.process_ticket_task.run(42, "Question")["status"] == "already_processed"
+    rag.assert_not_called()
+    note.assert_not_called()
+    lease.complete.assert_called_once()
+
+
+def test_zendesk_remote_marker_search(monkeypatch):
+    from app.services import zendesk
+
+    response = Mock()
+    response.json.return_value = {"comments": [{"public": False, "body": "Draft\\n[marker]"}], "next_page": None}
+    client = Mock()
+    client.get.return_value = response
+    manager = Mock()
+    manager.__enter__ = Mock(return_value=client)
+    manager.__exit__ = Mock(return_value=False)
+    monkeypatch.setattr(zendesk.httpx, "Client", Mock(return_value=manager))
+    assert zendesk.note_exists(42, "[marker]") is True
+    response.raise_for_status.assert_called_once()
