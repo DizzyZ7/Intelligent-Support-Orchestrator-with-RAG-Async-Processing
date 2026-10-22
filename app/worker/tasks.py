@@ -1,6 +1,8 @@
 """Asynchronous support-ticket processing with Redis deduplication."""
 import logging
+import httpx
 
+from celery.exceptions import Retry
 from app.core.celery_app import celery_app
 from app.services.idempotency import TicketLease
 from app.services.llm_service import generate_rag_answer
@@ -25,13 +27,19 @@ def process_ticket_task(self, ticket_id: int, user_query: str):
                 lease.complete()
                 return {"status": "already_processed", "ticket_id": ticket_id}
             answer = generate_rag_answer(user_query)
-            post_comment_to_ticket(ticket_id, f"{answer}\\n\\n{marker}")
+            post_comment_to_ticket(ticket_id, f"{answer}\n\n{marker}")
             lease.complete()
             return {"status": "success", "ticket_id": ticket_id}
         except Exception:
             lease.release()
             raise
-    except self.MaxRetriesExceededError:
+    except Retry:
+        raise
+    except (ValueError, httpx.HTTPStatusError) as exc:
+        if isinstance(exc, httpx.HTTPStatusError) and (exc.response.status_code == 429 or exc.response.status_code >= 500):
+            logger.warning("Temporary Zendesk HTTP failure for ticket %s", ticket_id)
+            raise self.retry(exc=exc, countdown=60)
+        logger.error("Permanent processing failure for ticket %s: %s", ticket_id, type(exc).__name__)
         raise
     except Exception as exc:
         logger.exception("Ticket %s processing failed", ticket_id)

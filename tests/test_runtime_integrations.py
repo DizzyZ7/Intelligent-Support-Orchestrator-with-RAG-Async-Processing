@@ -110,7 +110,7 @@ def test_worker_calls_rag_then_private_note(monkeypatch):
     result = tasks.process_ticket_task.run(ticket_id=42, user_query="Question")
     assert result == {"status": "success", "ticket_id": 42}
     rag.assert_called_once_with("Question")
-    note.assert_called_once_with(42, "Internal draft\\n\\n[marker]")
+    note.assert_called_once_with(42, "Internal draft\n\n[marker]")
     lease.complete.assert_called_once()
 
 
@@ -173,3 +173,43 @@ def test_zendesk_remote_marker_search(monkeypatch):
     monkeypatch.setattr(zendesk.httpx, "Client", Mock(return_value=manager))
     assert zendesk.note_exists(42, "[marker]") is True
     response.raise_for_status.assert_called_once()
+
+
+def test_worker_does_not_retry_permanent_http_error(monkeypatch):
+    import httpx
+    from app.worker import tasks
+
+    lease = Mock()
+    lease.acquire.return_value = "acquired"
+    monkeypatch.setattr(tasks, "TicketLease", Mock(return_value=lease))
+    monkeypatch.setattr(tasks, "note_marker", Mock(return_value="[marker]"))
+    request = httpx.Request("GET", "https://example.zendesk.com/api/v2/tickets/42/comments.json")
+    response = httpx.Response(403, request=request)
+    failure = httpx.HTTPStatusError("Forbidden", request=request, response=response)
+    monkeypatch.setattr(tasks, "note_exists", Mock(side_effect=failure))
+    retry = Mock(side_effect=AssertionError("permanent error must not retry"))
+    monkeypatch.setattr(tasks.process_ticket_task, "retry", retry)
+    with pytest.raises(httpx.HTTPStatusError):
+        tasks.process_ticket_task.run(42, "Question")
+    lease.release.assert_called_once()
+    retry.assert_not_called()
+
+
+def test_worker_retries_temporary_http_error(monkeypatch):
+    import httpx
+    from app.worker import tasks
+
+    lease = Mock()
+    lease.acquire.return_value = "acquired"
+    monkeypatch.setattr(tasks, "TicketLease", Mock(return_value=lease))
+    monkeypatch.setattr(tasks, "note_marker", Mock(return_value="[marker]"))
+    request = httpx.Request("GET", "https://example.zendesk.com/api/v2/tickets/42/comments.json")
+    response = httpx.Response(503, request=request)
+    failure = httpx.HTTPStatusError("Unavailable", request=request, response=response)
+    monkeypatch.setattr(tasks, "note_exists", Mock(side_effect=failure))
+    retry = Mock(side_effect=RuntimeError("retry scheduled"))
+    monkeypatch.setattr(tasks.process_ticket_task, "retry", retry)
+    with pytest.raises(RuntimeError, match="retry scheduled"):
+        tasks.process_ticket_task.run(42, "Question")
+    lease.release.assert_called_once()
+    retry.assert_called_once()
