@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     
     # App Settings
     PROJECT_NAME: str = "Intelligent Support Orchestrator"
-    DEBUG: bool = True
+    DEBUG: bool = False
     WEBHOOK_SECRET: str
 
     model_config = SettingsConfigDict(env_file=".env")
