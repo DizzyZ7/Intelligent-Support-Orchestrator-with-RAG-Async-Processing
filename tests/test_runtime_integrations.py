@@ -98,6 +98,9 @@ def test_rag_no_evidence_never_invokes_chat_model(monkeypatch):
 def test_worker_calls_rag_then_private_note(monkeypatch):
     from app.worker import tasks
 
+    lease = Mock() 
+    lease.acquire.return_value = "acquired"
+    monkeypatch.setattr(tasks, "TicketLease", Mock(return_value=lease))
     rag = Mock(return_value="Internal draft")
     note = Mock()
     monkeypatch.setattr(tasks, "generate_rag_answer", rag)
@@ -106,3 +109,32 @@ def test_worker_calls_rag_then_private_note(monkeypatch):
     assert result == {"status": "success", "ticket_id": 42}
     rag.assert_called_once_with("Question")
     note.assert_called_once_with(42, "Internal draft")
+    lease.complete.assert_called_once()
+
+
+def test_worker_skips_completed_ticket(monkeypatch):
+    from app.worker import tasks
+
+    lease = Mock()
+    lease.acquire.return_value = "completed"
+    monkeypatch.setattr(tasks, "TicketLease", Mock(return_value=lease))
+    rag = Mock()
+    note = Mock()
+    monkeypatch.setattr(tasks, "generate_rag_answer", rag)
+    monkeypatch.setattr(tasks, "post_comment_to_ticket", note)
+    assert tasks.process_ticket_task.run(42, "Question")["status"] == "already_processed"
+    rag.assert_not_called()
+    note.assert_not_called()
+
+
+def test_worker_skips_concurrent_ticket(monkeypatch):
+    from app.worker import tasks
+
+    lease = Mock()
+    lease.acquire.return_value = "busy"
+    monkeypatch.setattr(tasks, "TicketLease", Mock(return_value=lease))
+    note = Mock()
+    monkeypatch.setattr(tasks, "post_comment_to_ticket", note)
+    assert tasks.process_ticket_task.run(42, "Question")["status"] == "in_progress"
+    note.assert_not_called()
+

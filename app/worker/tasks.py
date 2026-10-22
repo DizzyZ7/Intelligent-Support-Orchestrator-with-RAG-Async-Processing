@@ -1,23 +1,34 @@
+"""Asynchronous support-ticket processing with Redis deduplication."""
+import logging
+
 from app.core.celery_app import celery_app
+from app.services.idempotency import TicketLease
 from app.services.llm_service import generate_rag_answer
 from app.services.zendesk import post_comment_to_ticket
-import logging
 
 logger = logging.getLogger(__name__)
 
+
 @celery_app.task(name="process_support_ticket", bind=True, max_retries=3)
 def process_ticket_task(self, ticket_id: int, user_query: str):
+    lease = TicketLease(ticket_id, user_query)
     try:
-        logger.info(f"Processing ticket {ticket_id}")
-        
-        # 1. Получаем ответ от RAG системы
-        answer = generate_rag_answer(user_query)
-        
-        # 2. Отправляем ответ обратно в Usedesk/Zendesk как внутреннюю заметку
-        post_comment_to_ticket(ticket_id, answer)
-        
-        return {"status": "success", "ticket_id": ticket_id}
+        state = lease.acquire()
+        if state == "completed":
+            return {"status": "already_processed", "ticket_id": ticket_id}
+        if state == "busy":
+            # Another worker owns the lease. Retry rather than silently lose the job.
+            return {"status": "in_progress", "ticket_id": ticket_id}
+        try:
+            answer = generate_rag_answer(user_query)
+            post_comment_to_ticket(ticket_id, answer)
+            lease.complete()
+            return {"status": "success", "ticket_id": ticket_id}
+        except Exception:
+            lease.release()
+            raise
+    except self.MaxRetriesExceededError:
+        raise
     except Exception as exc:
-        logger.error(f"Error processing ticket {ticket_id}: {exc}")
-        # Ретрай при ошибках сети или API
+        logger.exception("Ticket %s processing failed", ticket_id)
         raise self.retry(exc=exc, countdown=60)
