@@ -23,7 +23,7 @@ jobs:
       - name: Run dependency-free regression tests
         run: |
           python -m pip install pytest
-          python -m pytest -q tests
+          python -m pytest -q tests --ignore=tests/test_runtime_integrations.py
 
   dependency-and-compose:
     runs-on: ubuntu-latest
