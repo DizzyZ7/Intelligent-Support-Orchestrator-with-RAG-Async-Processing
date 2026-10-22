@@ -9,7 +9,7 @@ def generate_rag_answer(query: str) -> str:
     if not query.strip():
         raise ValueError("Question must not be empty")
     client = QdrantClient(host=settings.QDRANT_HOST, port=settings.QDRANT_PORT)
-    store = Qdrant(client=client, collection_name="support_kb", embedding=OpenAIEmbeddings(openai_api_key=settings.OPENAI_API_KEY))
+    store = Qdrant(client=client, collection_name="support_kb", embeddings=OpenAIEmbeddings(openai_api_key=settings.OPENAI_API_KEY))
     docs = store.similarity_search(query, k=4)
     if not docs:
         return "Insufficient knowledge-base evidence. Human review required."
