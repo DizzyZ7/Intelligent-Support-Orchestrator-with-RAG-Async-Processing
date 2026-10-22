@@ -2,6 +2,9 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from app.worker.tasks import process_ticket_task
 import logging
+import hmac
+from fastapi import Header
+from app.core.config import settings
 
 # Настройка логов
 logger = logging.getLogger(__name__)
@@ -20,7 +23,9 @@ async def health_check():
     return {"status": "ok"}
 
 @app.post("/webhook/ticket")
-async def handle_new_ticket(payload: TicketWebhook):
+async def handle_new_ticket(payload: TicketWebhook, x_webhook_secret: str | None = Header(default=None)):
+    if not x_webhook_secret or not hmac.compare_digest(x_webhook_secret, settings.WEBHOOK_SECRET):
+        raise HTTPException(status_code=401, detail="Unauthorized")
     """
     Эндпоинт для приема вебхуков. 
     Мы не обрабатываем логику тут, а кидаем задачу в Celery.
