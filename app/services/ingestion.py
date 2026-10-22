@@ -1,7 +1,7 @@
 import os
 from langchain_community.document_loaders import DirectoryLoader, TextLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_qdrant import QdrantVectorStore
+from langchain_qdrant import Qdrant
 from langchain_openai import OpenAIEmbeddings
 from qdrant_client import QdrantClient
 from app.core.config import settings
@@ -22,7 +22,7 @@ def run_ingestion():
     # 4. Инициализируем клиент Qdrant и создаем хранилище
     client = QdrantClient(host=settings.QDRANT_HOST, port=settings.QDRANT_PORT)
     
-    QdrantVectorStore.from_documents(
+    Qdrant.from_documents(
         docs,
         embeddings,
         host=settings.QDRANT_HOST,
